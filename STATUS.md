@@ -8,7 +8,7 @@ Last updated: 2026-11-06 (CodeRabbit review of PR #1 addressed)
 
 - **0.1.0 is in PR #1 (branch `initial-integration`), not merged yet.**
   - CodeRabbit reviewed it on 2026-11-06 at 11:59 and left 13 comments and 3 nitpicks.
-  - 13 were fixed in 6 commits; 3 were answered in the PR (no change). The verdict on each comment is in its PR thread.
+  - 14 were fixed in 6 commits; 2 were answered in the PR without a change. The verdict on each comment is in its PR thread.
   - The merge waits for the maintainer.
 - **On the device:** the maintainer's Home Assistant (2026.10.4) still runs the predecessor of this code since 2026-11-05 22:33: a stand-alone script with the same protocol code plus a YAML package, dead-man before every circulation pump run. The integration itself is **not installed** there yet, because a new integration needs a restart. The switch is planned together with the update to Home Assistant 2026.11.1.
 - **Checked 2026-11-06 on the real plug (SP3S-EU `0x947A`) with the command line tool of this version:**
