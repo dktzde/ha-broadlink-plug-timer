@@ -194,10 +194,14 @@ def _backup_dir(hass: HomeAssistant) -> str:
 
 
 def _local(value: datetime) -> datetime:
-    """Datetime from an action field: naive values are in the Home Assistant time zone."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=dt_util.get_default_time_zone())
-    return dt_util.as_local(value)
+    """Datetime from an action field: naive values are in the Home Assistant time zone.
+
+    Naive values that do not exist or exist twice at a daylight saving change are refused.
+    """
+    try:
+        return plug_lib.localize(value, dt_util.get_default_time_zone())
+    except plug_lib.PlugInputError as err:
+        raise ServiceValidationError(str(err)) from err
 
 
 async def _async_run(

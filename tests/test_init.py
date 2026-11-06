@@ -123,6 +123,9 @@ async def test_set_once(hass: HomeAssistant, device: FakeDevice) -> None:
     assert os.path.isfile(response["backup"])
     with pytest.raises(ServiceValidationError, match="after"):
         await call(hass, "set_once", entity_id=entity_id, on_time=on, off_time=on)
+    gap = dt_util.parse_datetime("2027-03-28 02:30:00")  # does not exist in Europe/Berlin
+    with pytest.raises(ServiceValidationError, match="does not exist"):
+        await call(hass, "set_once", entity_id=entity_id, on_time=gap, off_time=gap + timedelta(hours=2))
 
 
 async def test_write_weekly(hass: HomeAssistant, device: FakeDevice) -> None:

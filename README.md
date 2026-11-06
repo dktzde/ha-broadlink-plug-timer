@@ -90,7 +90,7 @@ data:
   off_time: "2026-11-07 10:05:00"
 ```
 
-The times are local times. They are right even after a daylight saving change.
+The times are local times. They are right even after a daylight saving change. A local time that does not exist or exists twice on the day of a change (for example 02:30) is refused; give it with its UTC offset instead (`2026-10-25 02:30:00+01:00`).
 
 ### Weekly schedule
 

@@ -390,6 +390,16 @@ def test_parse_response_errors() -> None:
         device.parse_response(bytes(packet))
 
 
+def test_localize() -> None:
+    assert plug.localize(datetime(2026, 11, 7, 10, 0), BERLIN).utcoffset() == timedelta(hours=1)
+    aware = datetime(2026, 10, 25, 2, 30, tzinfo=plug.UTC)
+    assert plug.localize(aware, BERLIN) == aware  # explicit offset: always accepted
+    with pytest.raises(plug.PlugInputError, match="twice"):
+        plug.localize(datetime(2026, 10, 25, 2, 30), BERLIN)  # clock goes back 03:00 -> 02:00
+    with pytest.raises(plug.PlugInputError, match="does not exist"):
+        plug.localize(datetime(2027, 3, 28, 2, 30), BERLIN)  # clock jumps 02:00 -> 03:00
+
+
 def test_parse_response_incomplete_block() -> None:
     device = plug.Plug(HOST, MAC, 0x947A)
     packet = bytearray(device.build_packet(plug.PACKET_COMMAND, bytes(16)) + bytes(5))

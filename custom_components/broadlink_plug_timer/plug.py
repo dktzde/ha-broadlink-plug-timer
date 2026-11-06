@@ -506,6 +506,27 @@ def _check_clock(memory: bytes, now: datetime) -> None:
         )
 
 
+def localize(moment: datetime, zone: tzinfo | None) -> datetime:
+    """Local time as a timezone-aware datetime. A naive time gets `zone` attached.
+
+    Naive times that do not exist (clock jumps forward) or exist twice (clock jumps back) at a
+    daylight saving change are refused; give such times with their UTC offset instead.
+    """
+    if moment.tzinfo is not None:
+        return moment.astimezone(zone) if zone else moment
+    if zone is None:
+        return moment.astimezone()  # system time zone (command line without --tz)
+    first, second = moment.replace(tzinfo=zone, fold=0), moment.replace(tzinfo=zone, fold=1)
+    if first.utcoffset() != second.utcoffset():
+        exists = first.astimezone(UTC).astimezone(zone).replace(tzinfo=None) == moment
+        problem = "exists twice" if exists else "does not exist"
+        raise PlugInputError(
+            f"{moment.isoformat(' ')} {problem} in {zone} because of the daylight saving change; "
+            "give it with its UTC offset, e.g. 2026-10-25 02:30:00+01:00"
+        )
+    return first
+
+
 def _plug_to_local(moment: datetime, offset_utc: timedelta, zone: tzinfo | None) -> datetime:
     return (moment - offset_utc).replace(tzinfo=UTC).astimezone(zone)
 
@@ -817,9 +838,7 @@ def _parse_local(text: str, zone: tzinfo | None) -> datetime:
         moment = datetime.fromisoformat(text.strip())
     except ValueError as err:
         raise PlugInputError(f'Invalid date/time {text!r} (use "YYYY-MM-DD HH:MM")') from err
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=zone) if zone else moment.astimezone()
-    return moment
+    return localize(moment, zone)
 
 
 def _zone(name: str | None) -> tzinfo | None:
