@@ -97,6 +97,10 @@ script:
               message: "The plug did not take the dead-man switch-off. Home Assistant switches the pump off as usual; only the safety net is missing for this run."
 
   # Example run: dead-man first (not waiting), then on, wait, off.
+  # Not waiting is a choice: a plug that does not answer must not delay or block the run (hot water),
+  # and the helper script warns if both attempts fail. To start only with a confirmed dead-man, call
+  # script.circulation_pump_deadman directly (it then waits) and check
+  # states('sensor.circulation_pump_dead_man') before switching on.
   circulation_pump_run:
     alias: "Circulation pump: run"
     mode: single
@@ -127,6 +131,8 @@ script:
           entity_id: switch.circulation_pump
 
 # When the plug switches the pump off at the latest (last dead-man). No value = last attempt failed.
+# The value is a deadline: once it has passed, the plug has switched off (or was already off), and the
+# entry has no effect any more. "written" only means the last write succeeded.
 template:
   - triggers:
       - trigger: event
@@ -138,19 +144,22 @@ template:
         device_class: timestamp
         state: "{{ trigger.event.data.off if trigger.event.data.ok else none }}"
         attributes:
-          status: "{{ 'armed' if trigger.event.data.ok else 'error' }}"
+          status: "{{ 'written' if trigger.event.data.ok else 'error' }}"
           minutes: "{{ trigger.event.data.minutes }}"
 
 automation:
   # Daily sync of the weekly table. The plug clock is fixed to UTC+8, so local times move by one hour
   # at every daylight saving change; this writes only when the plug differs (after such a change or
   # after an edit in the Broadlink app). The list replaces the whole weekly table of the plug.
+  # Also runs 2 minutes after Home Assistant starts, in case 04:05 was missed.
   - id: circulation_pump_weekly_sync
     alias: "Circulation pump: sync weekly timers of the plug"
     mode: single
     triggers:
       - trigger: time
         at: "04:05:00"
+      - trigger: homeassistant
+        event: start
     variables:
       entries:
         - days: mon-fri
@@ -160,6 +169,11 @@ automation:
           on_time: "08:00"
           off_time: "08:05"
     actions:
+      - if:
+          - condition: template
+            value_template: "{{ trigger.platform == 'homeassistant' }}"
+        then:
+          - delay: "00:02:00"   # let Wi-Fi and the Broadlink integration come up first
       - action: broadlink_plug_timer.write_weekly
         data:
           entity_id: switch.circulation_pump
