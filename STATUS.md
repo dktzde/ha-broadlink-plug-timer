@@ -2,48 +2,36 @@
 
 Read this first, and update it after every step, so the next session can continue without the chat history.
 
-Last updated: 2026-11-06 (CodeRabbit review of PR #1 addressed)
+Last updated: 2026-11-06 (0.1.0 released and running on the device)
 
 ## Current state
 
-- **0.1.0 is in PR #1 (branch `initial-integration`), not merged yet.**
-  - CodeRabbit reviewed it on 2026-11-06 at 11:59 and left 13 comments and 3 nitpicks.
-  - 14 were fixed in 6 commits; 2 were answered in the PR without a change. The verdict on each comment is in its PR thread.
-  - Three follow-ups from the bot's replies were fixed as well: the source port is checked, the drift is measured against UTC+8, and the example retries a failed sync once.
-  - An incremental review of the fixes was blocked at 12:12 by the free review limit.
-  - The merge waits for the maintainer.
-- **On the device:** the maintainer's Home Assistant (2026.10.4) still runs the predecessor of this code since 2026-11-05 22:33: a stand-alone script with the same protocol code plus a YAML package, dead-man before every circulation pump run. The integration itself is **not installed** there yet, because a new integration needs a restart. The switch is planned together with the update to Home Assistant 2026.11.1.
-- **Checked 2026-11-06 on the real plug (SP3S-EU `0x947A`) with the command line tool of this version:**
-  - 11:23 `read`: identical to the predecessor script (weekly and one-time tables, reserved bytes, offset +7 h).
-  - 11:23 `backup` worked.
-  - 11:23 `weekly --dry-run`, with the plug's existing disabled app entry given in local time (03:14:59–07:19:59): `changed: false`. This shows that the conversion reproduces the app's bytes exactly.
-  - 11:23 `deadman`, `once` (kept by the next `deadman`), `clear-deadman` (keeps `once`) and `restore` all worked; afterwards bytes 0x08–0x1EF were identical to the backup.
-  - **11:24 end-to-end dead-man with a simulated Home Assistant failure:**
-    - The pump was started through the maintainer's pump script (1 min); the controlling scripts were stopped 4 s later.
-    - `deadman 1` of this version replaced the old dead-man entry (off at 11:25:38).
-    - **The plug switched itself off at 11:25:39**; Home Assistant saw it at 11:26:16 (poll). Afterwards `clear-deadman` was run.
-- **Checked in a Home Assistant test instance (pytest harness, HA 2026.10.4) against the real plug:** 11:26. The actions `read`, `backup`, `set_deadman`, `write_weekly` (dry run, `changed: false`), `clear_deadman` and `restore` worked; the plug looked the same as before afterwards. The test file is not in the repository, because it contains the real address.
+- **0.1.0 released on 2026-11-06** (GitHub release `v0.1.0`; PR #1 merged with a merge commit).
+  - CodeRabbit reviewed it twice. The first review: 13 comments and 3 nitpicks; 14 fixed, 2 answered (each verdict is in its thread). The second review, of the fixes only: no findings.
+- **On the device since 2026-11-06 12:59 (maintainer's Home Assistant 2026.10.4):**
+  - installed through HACS as a custom repository at 12:47; the files are identical to the release;
+  - restart at 12:57, integration added through the config flow;
+  - the maintainer's circulation pump package now calls `set_deadman` before every run; the old stand-alone script is removed.
+- **Checked 2026-11-06:**
+  - 12:58 `read` through Home Assistant.
+  - **12:59 normal 2-minute run:** the dead-man was written 1 s after the start (off at +8 min, first attempt), the plug was on, and Home Assistant switched off after 2 min as usual.
+  - The checks of the code before the release (real plug, simulated Home Assistant failure at 11:24: the plug switched itself off 1 s after the planned time) are in the PR #1 description and below.
+- **Before the release, checked 2026-11-06 on the real plug (SP3S-EU `0x947A`) with the command line tool:**
+  - `read` identical to the predecessor script;
+  - `weekly --dry-run` with the existing app entry: `changed: false`;
+  - `deadman`, `once`, `clear-deadman`, `restore`: byte-identical afterwards;
+  - after the review fixes (12:05/12:15): `read` with the sender/port check, `weekly --dry-run` unchanged, a non-existent local time refused.
 - **Not checked yet:**
-  - installation through the Marketplace or HACS on a real Home Assistant, and the config flow there;
-  - the CI run on GitHub (hassfest and HACS validation could not be run locally);
-  - a daylight saving change;
+  - installation through the Marketplace (Home Assistant 2026.11);
+  - a daylight saving change with `write_weekly` in use (the maintainer does not manage weekly timers yet);
   - a Sunday weekday mask;
   - SP3S-US.
-- **Offline tests:** 84 passed (`python -m pytest -q`); `ruff check` and `ruff format --check` are clean.
-- **After the review fixes, checked 2026-11-06 at 12:05 on the real plug:**
-  - `read` works with the new sender check.
-  - `weekly --dry-run` still gives `changed: false`.
-  - The non-existent time `2027-03-28 02:30` is refused.
+- **Offline tests:** 84 passed; `ruff check` and `ruff format --check` are clean; CI (hassfest, HACS, tests) is green.
 
 ## Next steps
 
-1. Merge PR #1 (when the maintainer asks), then CHANGELOG date = merge day.
-2. After the merge: GitHub release `v0.1.0`, then check that HACS (and the Marketplace after the 2026.11 update) offers it.
-3. Maintainer's setup, together with the restart for Home Assistant 2026.11.1:
-   - install the integration and add it;
-   - point the YAML package at `broadlink_plug_timer.set_deadman` and stop using the shell script;
-   - run one real pump run and one simulated failure, and record the results here.
-4. On a plug-time Sunday (Saturday 17:00 – Sunday 17:00 CET), check that `read` shows `plug_clock_weekday_byte` 0.
+1. After the maintainer's update to Home Assistant 2026.11.x: check that the Marketplace took the repository over from HACS and that the integration still loads and sets the dead-man.
+2. On a plug-time Sunday (Saturday 17:00 – Sunday 17:00 CET), check that `read` shows `plug_clock_weekday_byte` 0.
 
 ## Known issues and backlog
 
