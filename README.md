@@ -141,7 +141,7 @@ Details, the way the layout was found, and the test log are in [docs/protocol.md
 - **Timers in the plug bypass Home Assistant.** A weekly or one-time "on" switches the load even if Home Assistant is down. That is the point, but nothing in Home Assistant watches those runs.
 - There is no dead-man for switching outside Home Assistant (app, button on the plug). It only covers runs that call `set_deadman` first.
 - Every `set_deadman` is one write to the plug's flash, so 10–20 a day for a circulation pump. How many writes the flash can take is unknown.
-- If the plug clock is not set (year before 2020, for example after a power cut without internet), the dead-man is refused with an error. The plug sets its clock from the Broadlink cloud. If the clock is more than 2 minutes off, `write_weekly` and `set_once` are refused, because local times would be wrong; the dead-man still works, as it is relative to the plug clock.
+- If the plug clock is not set (year before 2020, for example after a power cut without internet), the dead-man is refused with an error. The plug sets its clock from the Broadlink cloud. If the clock is more than 2 minutes off UTC+8, `write_weekly` and `set_once` are refused, because local times would be wrong; the dead-man still works, as it is relative to the plug clock.
 - The plug has 8 one-time slots. If they are all taken by pending entries, `set_deadman` is refused. It never drops a pending switch-off to make room.
 - If you save timers in the Broadlink app, the app writes the whole table. The next `set_deadman` brings the dead-man back; the daily `write_weekly` resets the weekly table.
 - Home Assistant polls the plug about once a minute, so it sees switching done by the plug itself late, or not at all if it was very short.

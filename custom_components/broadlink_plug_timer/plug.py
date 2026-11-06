@@ -90,7 +90,9 @@ DAYS_FROM_MONDAY = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ALL_DAYS = 0x7F
 
 MAX_DEADMAN_MINUTES = 24 * 60
-#: Weekly and one-time times are refused if the plug clock is further off than this (it syncs from the cloud).
+#: Time zone of the plug clock (factory setting from the Broadlink cloud).
+PLUG_UTC_OFFSET = timedelta(hours=8)
+#: Weekly and one-time times are refused if the plug clock is further off UTC+8 than this (it syncs from the cloud).
 MAX_CLOCK_DEVIATION_S = 120
 
 
@@ -496,13 +498,23 @@ def utc_offset(memory: bytes, now: datetime) -> timedelta:
     return _round_quarter((clock - now.astimezone(UTC).replace(tzinfo=None)).total_seconds())
 
 
+def clock_deviation(memory: bytes, now: datetime) -> float:
+    """Plug clock minus the exact UTC+8 time, in seconds (positive = plug clock is fast)."""
+    expected = now.astimezone(UTC).replace(tzinfo=None) + PLUG_UTC_OFFSET
+    return (_valid_clock(memory) - expected).total_seconds()
+
+
 def _check_clock(memory: bytes, now: datetime) -> None:
-    """Refuse to convert local times if the plug clock deviates (the rounded offset would hide it)."""
-    _offset, deviation = local_offset(memory, now)
+    """Refuse to convert local times if the plug clock is not on UTC+8 within MAX_CLOCK_DEVIATION_S.
+
+    Compared directly with UTC+8, because the offsets are rounded to 15 minutes and would hide a drift
+    of a whole quarter hour.
+    """
+    deviation = clock_deviation(memory, now)
     if abs(deviation) > MAX_CLOCK_DEVIATION_S:
         raise PlugError(
-            f"The plug clock is {deviation:+.0f} s off (more than {MAX_CLOCK_DEVIATION_S} s), so local times would be "
-            "wrong. The plug sets its clock from the Broadlink cloud; check its internet access."
+            f"The plug clock is {deviation:+.0f} s off UTC+8 (more than {MAX_CLOCK_DEVIATION_S} s), so local times "
+            "would be wrong. The plug sets its clock from the Broadlink cloud; check its internet access."
         )
 
 
@@ -717,13 +729,13 @@ def report(memory: bytes, now: datetime) -> dict[str, Any]:
         "reserved_hex": memory[OFS_RESERVED:OFS_CLOCK].hex(),
     }
     try:
-        offset, deviation = local_offset(memory, now)
+        offset, _deviation = local_offset(memory, now)
         offset_utc = utc_offset(memory, now)
     except PlugError as err:
         result["clock_error"] = str(err)
         return result
     result["offset_hours"] = offset.total_seconds() / 3600
-    result["clock_deviation_s"] = round(deviation)
+    result["clock_deviation_s"] = round(clock_deviation(memory, now))  # against UTC+8
     result["weekly_local_time"] = weekly_in_local_time(memory, offset)
     result["once_local_time"] = [
         {

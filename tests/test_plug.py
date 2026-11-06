@@ -188,6 +188,19 @@ def test_weekly_and_once_refused_with_clock_drift() -> None:
     plug.with_deadman(memory, 8, WINTER_NOW)  # relative to the plug clock: drift does not matter
 
 
+@pytest.mark.parametrize(("seconds", "refused"), [(119, False), (-119, False), (121, True), (900, True), (-900, True)])
+def test_clock_drift_against_utc_plus_8(seconds, refused) -> None:
+    # 900 s = a whole quarter hour: the rounded offset alone would not notice it
+    memory = make_memory(WINTER_CLOCK + timedelta(seconds=seconds))
+    entries = [{"on_time": "06:30", "off_time": "06:35"}]
+    if refused:
+        with pytest.raises(plug.PlugError, match="UTC\\+8"):
+            plug.with_weekly(memory, entries, WINTER_NOW)
+    else:
+        plug.with_weekly(memory, entries, WINTER_NOW)
+    assert plug.report(memory, WINTER_NOW)["clock_deviation_s"] == seconds
+
+
 def test_weekly_needs_off_for_every_on() -> None:
     with pytest.raises(plug.PlugInputError, match="off_time"):
         plug.weekly_to_plug([{"on_time": "06:30"}], timedelta(hours=7))
