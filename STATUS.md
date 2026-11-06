@@ -9,6 +9,8 @@ Last updated: 2026-11-06 (CodeRabbit review of PR #1 addressed)
 - **0.1.0 is in PR #1 (branch `initial-integration`), not merged yet.**
   - CodeRabbit reviewed it on 2026-11-06 at 11:59 and left 13 comments and 3 nitpicks.
   - 14 were fixed in 6 commits; 2 were answered in the PR without a change. The verdict on each comment is in its PR thread.
+  - Three follow-ups from the bot's replies were fixed as well: the source port is checked, the drift is measured against UTC+8, and the example retries a failed sync once.
+  - An incremental review of the fixes was blocked at 12:12 by the free review limit.
   - The merge waits for the maintainer.
 - **On the device:** the maintainer's Home Assistant (2026.10.4) still runs the predecessor of this code since 2026-11-05 22:33: a stand-alone script with the same protocol code plus a YAML package, dead-man before every circulation pump run. The integration itself is **not installed** there yet, because a new integration needs a restart. The switch is planned together with the update to Home Assistant 2026.11.1.
 - **Checked 2026-11-06 on the real plug (SP3S-EU `0x947A`) with the command line tool of this version:**
@@ -27,7 +29,7 @@ Last updated: 2026-11-06 (CodeRabbit review of PR #1 addressed)
   - a daylight saving change;
   - a Sunday weekday mask;
   - SP3S-US.
-- **Offline tests:** 79 passed (`python -m pytest -q`); `ruff check` and `ruff format --check` are clean.
+- **Offline tests:** 84 passed (`python -m pytest -q`); `ruff check` and `ruff format --check` are clean.
 - **After the review fixes, checked 2026-11-06 at 12:05 on the real plug:**
   - `read` works with the new sender check.
   - `weekly --dry-run` still gives `changed: false`.
@@ -58,10 +60,10 @@ Last updated: 2026-11-06 (CodeRabbit review of PR #1 addressed)
 - Only SP3S device types (`0x947A`, `0x9479`) are accepted. Other types are refused, because their layout is unknown.
 - `write_weekly` replaces the whole table and writes only when something changed. It is meant to be called daily, because of daylight saving time.
 - An `off_time` earlier than the `on_time` in a weekly entry means the next day (overnight). Equal times are refused.
-- `write_weekly` and `set_once` are refused when the plug clock deviates by more than 120 s. The dead-man is not affected, because it is relative to the plug clock.
+- `write_weekly` and `set_once` are refused when the plug clock deviates from UTC+8 by more than 120 s (measured directly, not via the rounded offset). The dead-man is not affected, because it is relative to the plug clock.
 - `set_deadman` is refused when pending one-time entries fill all 8 slots. It never drops a pending switch-off.
 - Naive local times that do not exist, or exist twice, at a daylight saving change are refused; times with a UTC offset are accepted.
-- Replies from other addresses than the plug are ignored.
+- Only replies from the plug's address and port 80 are accepted.
 - The example does not wait for the dead-man before switching on: a plug that does not answer must not block the run. The helper script warns instead. Raised by CodeRabbit; kept on purpose.
 - The minimum Home Assistant version is 2025.1.0. All APIs used exist since 2024.x; there is no CI job for that version.
 - Repository texts are English; private data appears only as placeholders.
