@@ -151,7 +151,8 @@ automation:
   # Daily sync of the weekly table. The plug clock is fixed to UTC+8, so local times move by one hour
   # at every daylight saving change; this writes only when the plug differs (after such a change or
   # after an edit in the Broadlink app). The list replaces the whole weekly table of the plug.
-  # Also runs 2 minutes after Home Assistant starts, in case 04:05 was missed.
+  # Also runs 2 minutes after Home Assistant starts, in case 04:05 was missed; a failed sync is retried
+  # once after 10 minutes.
   - id: circulation_pump_weekly_sync
     alias: "Circulation pump: sync weekly timers of the plug"
     mode: single
@@ -178,24 +179,35 @@ automation:
         data:
           entity_id: switch.circulation_pump
           entries: "{{ entries }}"
-        response_variable: result
+        response_variable: first
+        continue_on_error: true    # a failed action leaves `first` undefined
+      - if:
+          - condition: template
+            value_template: "{{ first is defined }}"
+        then:
+          - if:
+              - condition: template
+                value_template: "{{ first.written }}"
+            then:
+              - action: logbook.log
+                data:
+                  name: Circulation pump timers
+                  message: "Weekly timers written into the plug (offset {{ first.offset_hours }} h)"
+                  entity_id: switch.circulation_pump
+          - stop: Weekly timers in sync
+      # Plug or Wi-Fi not ready (e.g. right after a power cut): one more attempt 10 minutes later
+      - delay: "00:10:00"
+      - action: broadlink_plug_timer.write_weekly
+        data:
+          entity_id: switch.circulation_pump
+          entries: "{{ entries }}"
+        response_variable: second
         continue_on_error: true
-      - choose:
-          - conditions:
-              - condition: template
-                value_template: "{{ result is not defined }}"
-            sequence:
-              - action: logbook.log
-                data:
-                  name: Circulation pump timers
-                  message: "Sync of the weekly timers failed (see the Home Assistant log)"
-                  entity_id: switch.circulation_pump
-          - conditions:
-              - condition: template
-                value_template: "{{ result.written }}"
-            sequence:
-              - action: logbook.log
-                data:
-                  name: Circulation pump timers
-                  message: "Weekly timers written into the plug (offset {{ result.offset_hours }} h)"
-                  entity_id: switch.circulation_pump
+      - action: logbook.log
+        data:
+          name: Circulation pump timers
+          message: >-
+            {% if second is not defined %}Sync of the weekly timers failed twice (see the Home Assistant log)
+            {%- elif second.written %}Weekly timers written into the plug on the second attempt (offset {{ second.offset_hours }} h)
+            {%- else %}Weekly timers in sync (second attempt){% endif %}
+          entity_id: switch.circulation_pump
