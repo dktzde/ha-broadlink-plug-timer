@@ -250,12 +250,25 @@ def test_deadman_set_replace_and_clear() -> None:
     assert "off_local" not in info
 
 
-def test_deadman_fits_into_full_table() -> None:
+def test_deadman_refused_when_table_full_of_pending_entries() -> None:
     future = [
         plug.encode_once(WINTER_CLOCK + timedelta(hours=h), WINTER_CLOCK + timedelta(hours=h, minutes=1))
         for h in range(1, 9)
     ]
-    new, _ = plug.with_deadman(make_memory(WINTER_CLOCK, once=future), 8, WINTER_NOW)
+    memory = make_memory(WINTER_CLOCK, once=future)
+    with pytest.raises(plug.PlugError, match="full"):
+        plug.with_deadman(memory, 8, WINTER_NOW)  # never drop a pending switch-off
+    cleared, _ = plug.with_deadman(memory, None, WINTER_NOW)  # removing works
+    assert len(plug.once_entries(cleared)) == plug.ONCE_MAX
+
+
+def test_deadman_replaces_old_one_in_full_table() -> None:
+    future = [
+        plug.encode_once(WINTER_CLOCK + timedelta(hours=h), WINTER_CLOCK + timedelta(hours=h, minutes=1))
+        for h in range(1, 8)
+    ]
+    memory = make_memory(WINTER_CLOCK, once=[*future, plug.encode_once(None, WINTER_CLOCK + timedelta(minutes=3))])
+    new, _ = plug.with_deadman(memory, 8, WINTER_NOW)
     entries = plug.once_entries(new)
     assert len(entries) == plug.ONCE_MAX
     assert entries[-1]["deadman"] is True
@@ -454,6 +467,15 @@ def test_report_and_setters_refuse_bad_sizes() -> None:
     with pytest.raises(plug.PlugInputError, match="24 bytes"):
         plug.set_once_table(memory, [bytes(23)])
     assert memory == make_memory(WINTER_CLOCK)
+
+
+def test_backup_names_are_unique(tmp_path) -> None:
+    device = FakeDevice(make_memory(WINTER_CLOCK))
+    fake = device.factory(HOST, MAC, 0x947A)
+    first = plug.save_backup(fake, str(tmp_path), bytes(device.memory))
+    second = plug.save_backup(fake, str(tmp_path), bytes(device.memory))
+    assert first != second
+    assert len(list(tmp_path.iterdir())) == 2
 
 
 def test_invalid_mac() -> None:

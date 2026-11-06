@@ -591,8 +591,8 @@ def weekly_in_local_time(memory: bytes, offset: timedelta) -> list[dict[str, Any
 def with_deadman(memory: bytes, minutes: float | None, now: datetime) -> tuple[bytearray, dict[str, Any]]:
     """Replace the dead-man entry: one-time "off" at plug clock + `minutes` (None = only remove it).
 
-    Expired one-time entries are removed, future entries with an "on" are kept. If the table is
-    full, the oldest entries are dropped so the dead-man always fits.
+    Expired one-time entries are removed, future entries with an "on" are kept. If those already
+    fill the table, the dead-man is refused (PlugError) instead of dropping a pending switch-off.
     """
     if minutes is not None and not 1 <= minutes <= MAX_DEADMAN_MINUTES:
         raise PlugInputError(f"Dead-man minutes must be 1 ... {MAX_DEADMAN_MINUTES}, not {minutes}")
@@ -605,12 +605,17 @@ def with_deadman(memory: bytes, minutes: float | None, now: datetime) -> tuple[b
         keep.append(raw)
     info: dict[str, Any] = {"plug_clock": clock.isoformat(" ")}
     if minutes is not None:
+        if len(keep) >= ONCE_MAX:
+            raise PlugError(
+                f"The one-time table of the plug is full ({ONCE_MAX} pending entries), so the dead-man was not set. "
+                "Remove one-time entries first."
+            )
         off = clock + timedelta(seconds=round(minutes * 60))
         keep.append(encode_once(None, off))
         info["off_plug_time"] = off.isoformat(" ")
         info["off_local"] = _plug_to_local(off, utc_offset(memory, now), now.tzinfo).isoformat()
     new = bytearray(memory)
-    set_once_table(new, keep[-ONCE_MAX:])
+    set_once_table(new, keep)
     return new, info
 
 
@@ -734,10 +739,16 @@ def save_backup(plug: Plug, directory: str, memory: bytes | None = None) -> str:
     if memory is None:
         memory = _connect(plug)
     os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, backup_file_name(plug, datetime.now()))
-    with open(path, "wb") as file:
-        file.write(memory)
-    return path
+    base = backup_file_name(plug, datetime.now()).removesuffix(".bin")
+    for suffix in ["", *(f"_{number}" for number in range(1, 100))]:
+        path = os.path.join(directory, f"{base}{suffix}.bin")
+        try:
+            with open(path, "xb") as file:  # never overwrite an earlier backup
+                file.write(memory)
+        except FileExistsError:
+            continue
+        return path
+    raise PlugError(f"No free backup file name for {base} in {directory}")
 
 
 def read_report(plug: Plug, now: datetime) -> dict[str, Any]:
