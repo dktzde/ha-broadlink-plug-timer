@@ -438,7 +438,7 @@ def test_send_ignores_other_senders(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = bytes([1] + [0] * 15)
     good = plug.Plug(HOST, MAC, 0x947A).build_packet(plug.PACKET_COMMAND, payload)
     forged = plug.Plug(HOST, MAC, 0x947A).build_packet(plug.PACKET_COMMAND, bytes([9] * 16))
-    fake = _FakeSocket([(forged, ("192.0.2.99", 80)), (good, (HOST, 80))])
+    fake = _FakeSocket([(forged, ("192.0.2.99", 80)), (forged, (HOST, 4321)), (good, (HOST, 80))])
     monkeypatch.setattr(plug.socket, "socket", lambda *args: fake)
     monkeypatch.setattr(plug.socket, "gethostbyname", lambda host: HOST)
     assert device.send(plug.PACKET_COMMAND, payload) == payload

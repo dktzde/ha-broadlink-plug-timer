@@ -197,7 +197,7 @@ class Plug:
                         data, sender = sock.recvfrom(2048)
                     except TimeoutError:  # socket.timeout is an alias of TimeoutError
                         break
-                    if sender[0] == address:
+                    if sender[:2] == (address, PORT):  # the plug answers from its port 80
                         response = data
                         break
         return self.parse_response(response)
