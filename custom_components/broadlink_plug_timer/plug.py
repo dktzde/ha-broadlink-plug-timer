@@ -171,24 +171,33 @@ class Plug:
         error = int.from_bytes(response[0x22:0x24], "little", signed=True)
         if error:
             raise PlugError(f"The plug answered with error {error}")
-        return self.decrypt(response[0x38:])
+        encrypted = response[0x38:]
+        if len(encrypted) % 16:  # AES works on whole blocks; anything else is a broken packet
+            raise PlugError(f"Encrypted payload is not a multiple of 16 bytes ({len(encrypted)} bytes)")
+        return self.decrypt(encrypted)
 
     def send(self, packet_type: int, payload: bytes) -> bytes:
         """Send one request and wait for its response (repeated every second until the timeout)."""
         packet = self.build_packet(packet_type, payload)
+        address = socket.gethostbyname(self.host)  # replies from any other address are ignored
         start = time.monotonic()
+        response = None
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            while True:
+            while response is None:
                 remaining = self.timeout - (time.monotonic() - start)
                 if remaining <= 0:
                     raise PlugError(f"No answer from the plug at {self.host} within {self.timeout:g} s")
-                sock.settimeout(min(1.0, remaining))
-                sock.sendto(packet, (self.host, PORT))
-                try:
-                    response = sock.recvfrom(2048)[0]
-                    break
-                except TimeoutError:  # socket.timeout is an alias of TimeoutError
-                    continue
+                sock.sendto(packet, (address, PORT))
+                slot_end = time.monotonic() + min(1.0, remaining)  # wait up to 1 s, then send again
+                while (wait := slot_end - time.monotonic()) > 0:
+                    sock.settimeout(wait)
+                    try:
+                        data, sender = sock.recvfrom(2048)
+                    except TimeoutError:  # socket.timeout is an alias of TimeoutError
+                        break
+                    if sender[0] == address:
+                        response = data
+                        break
         return self.parse_response(response)
 
     # -- commands --------------------------------------------------------------------------------
@@ -376,6 +385,8 @@ def set_weekly_table(memory: bytearray, entries: list[bytes]) -> None:
     """Replace the whole weekly table (unused slots are zeroed)."""
     if len(entries) > WEEKLY_MAX:
         raise PlugInputError(f"Too many weekly entries for the plug ({len(entries)} > {WEEKLY_MAX})")
+    if any(len(entry) != WEEKLY_SIZE for entry in entries):
+        raise PlugInputError(f"Every weekly entry must have {WEEKLY_SIZE} bytes")
     memory[OFS_WEEKLY_COUNT : OFS_WEEKLY_COUNT + 4] = len(entries).to_bytes(4, "little")
     memory[OFS_WEEKLY : OFS_WEEKLY + WEEKLY_MAX * WEEKLY_SIZE] = b"".join(entries) + bytes(
         (WEEKLY_MAX - len(entries)) * WEEKLY_SIZE
@@ -421,6 +432,8 @@ def set_once_table(memory: bytearray, entries: list[bytes]) -> None:
     """Replace the whole one-time table (unused slots are zeroed)."""
     if len(entries) > ONCE_MAX:
         raise PlugInputError(f"Too many one-time entries for the plug ({len(entries)} > {ONCE_MAX})")
+    if any(len(entry) != ONCE_SIZE for entry in entries):
+        raise PlugInputError(f"Every one-time entry must have {ONCE_SIZE} bytes")
     memory[OFS_ONCE_COUNT : OFS_ONCE_COUNT + 4] = len(entries).to_bytes(4, "little")
     memory[OFS_ONCE : OFS_ONCE + ONCE_MAX * ONCE_SIZE] = b"".join(entries) + bytes(
         (ONCE_MAX - len(entries)) * ONCE_SIZE
@@ -642,6 +655,9 @@ def with_restored(memory: bytes, backup: bytes) -> bytearray:
 
 def report(memory: bytes, now: datetime) -> dict[str, Any]:
     """Everything readable, in plug time and (if the plug clock is set) in local time."""
+    if len(memory) < MEMORY_SIZE:
+        raise PlugError(f"Timer memory too short for a report ({len(memory)} of {MEMORY_SIZE} bytes)")
+    check_memory(memory)
     clock = plug_clock(memory)
     result: dict[str, Any] = {
         "name": memory[OFS_NAME : OFS_NAME + NAME_LENGTH].split(b"\0")[0].decode("utf-8", "replace"),

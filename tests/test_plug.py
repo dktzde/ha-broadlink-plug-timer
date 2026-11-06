@@ -350,6 +350,85 @@ def test_parse_response_errors() -> None:
         device.parse_response(bytes(packet))
 
 
+def test_parse_response_incomplete_block() -> None:
+    device = plug.Plug(HOST, MAC, 0x947A)
+    packet = bytearray(device.build_packet(plug.PACKET_COMMAND, bytes(16)) + bytes(5))
+    packet[0x20:0x22] = _checksum(packet).to_bytes(2, "little")
+    with pytest.raises(plug.PlugError, match="multiple of 16"):
+        device.parse_response(bytes(packet))
+
+
+class _FakeSocket:
+    """UDP socket replacement: returns the queued datagrams, then times out."""
+
+    def __init__(self, datagrams: list[tuple[bytes, tuple[str, int]]]) -> None:
+        self.datagrams = datagrams
+        self.sent = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def settimeout(self, value: float) -> None:
+        return None
+
+    def sendto(self, data: bytes, address) -> None:
+        self.sent += 1
+
+    def recvfrom(self, size: int):
+        if not self.datagrams:
+            raise TimeoutError
+        return self.datagrams.pop(0)
+
+
+def test_send_ignores_other_senders(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = plug.Plug(HOST, MAC, 0x947A, timeout=1.5)
+    payload = bytes([1] + [0] * 15)
+    good = plug.Plug(HOST, MAC, 0x947A).build_packet(plug.PACKET_COMMAND, payload)
+    forged = plug.Plug(HOST, MAC, 0x947A).build_packet(plug.PACKET_COMMAND, bytes([9] * 16))
+    fake = _FakeSocket([(forged, ("192.0.2.99", 80)), (good, (HOST, 80))])
+    monkeypatch.setattr(plug.socket, "socket", lambda *args: fake)
+    monkeypatch.setattr(plug.socket, "gethostbyname", lambda host: HOST)
+    assert device.send(plug.PACKET_COMMAND, payload) == payload
+    assert fake.sent == 1
+
+
+def test_send_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = plug.Plug(HOST, MAC, 0x947A, timeout=0.2)
+    monkeypatch.setattr(plug.socket, "socket", lambda *args: _FakeSocket([]))
+    monkeypatch.setattr(plug.socket, "gethostbyname", lambda host: HOST)
+    with pytest.raises(plug.PlugError, match="No answer"):
+        device.send(plug.PACKET_COMMAND, bytes(16))
+
+
+def test_write_memory_detects_read_back_difference(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = plug.Plug(HOST, MAC, 0x947A)
+    stored = make_memory(WINTER_CLOCK)
+    wanted, _ = plug.with_deadman(stored, 8, WINTER_NOW)
+
+    def send(packet_type: int, payload: bytes) -> bytes:
+        if payload[0] == plug.CMD_WRITE:
+            return bytes(payload)  # acknowledged ...
+        return bytes(stored)  # ... but the plug still has the old table
+
+    monkeypatch.setattr(device, "send", send)
+    with pytest.raises(plug.PlugError, match="Read back differs"):
+        device.write_memory(wanted)
+
+
+def test_report_and_setters_refuse_bad_sizes() -> None:
+    with pytest.raises(plug.PlugError, match="too short"):
+        plug.report(make_memory(WINTER_CLOCK)[:0x1F0], WINTER_NOW)
+    memory = make_memory(WINTER_CLOCK)
+    with pytest.raises(plug.PlugInputError, match="12 bytes"):
+        plug.set_weekly_table(memory, [bytes(11)])
+    with pytest.raises(plug.PlugInputError, match="24 bytes"):
+        plug.set_once_table(memory, [bytes(23)])
+    assert memory == make_memory(WINTER_CLOCK)
+
+
 def test_invalid_mac() -> None:
     with pytest.raises(plug.PlugInputError):
         plug.Plug(HOST, "a1b2c3", 0x947A)
