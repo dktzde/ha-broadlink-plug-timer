@@ -1,0 +1,187 @@
+# Example package: dead-man switch for a hot-water circulation pump on a Broadlink SP3S plug.
+#
+# What it does:
+#   - script.circulation_pump_deadman writes a one-time "off" into the plug: planned run time + reserve.
+#     Call it right before switching the pump on, without waiting for it (script.turn_on).
+#     If the plug does not answer, it tries a second time; if that fails as well, it writes to the
+#     logbook and, only while the pump is on, creates a persistent notification.
+#   - sensor.circulation_pump_deadman: when the plug will switch off at the latest (last dead-man).
+#   - script.circulation_pump_run: example run (dead-man, on, wait, off).
+#   - automation: daily sync of the weekly table (needed because the plug clock ignores daylight saving).
+#
+# Use: copy to /config/packages/ (packages enabled: `homeassistant: packages: !include_dir_named packages`),
+# replace switch.circulation_pump with the switch entity of your plug, then reload scripts, template
+# entities and automations (Developer tools › YAML), or restart.
+
+# ══ SETTINGS ════════════════════════════════════════════════════════════════════════════════════════
+script:
+  circulation_pump_deadman:
+    variables:
+      plug: switch.circulation_pump  # switch entity of the plug (Broadlink integration)
+      reserve_min: 6                 # minutes beyond the planned run time (covers start checks, retries)
+      retry_after_s: 20              # seconds before the second attempt
+# ════════════════════════════════════════════════════════════════════════════════════════════════════
+
+    alias: "Circulation pump: set dead-man in the plug"
+    description: >-
+      Writes a one-time "off" into the plug of the circulation pump: planned run time plus reserve.
+      If Home Assistant does not switch off in time, the plug does it by itself.
+    icon: mdi:timer-cog-outline
+    mode: queued
+    max: 5
+    fields:
+      run_s:
+        name: Run time
+        description: Planned run time of the pump in seconds (without reserve).
+        required: true
+        example: 120
+        selector:
+          number:
+            min: 0
+            max: 86400
+            unit_of_measurement: s
+    sequence:
+      - variables:
+          minutes: "{{ ((run_s | float(120)) / 60 + reserve_min | float(6)) | round(1) }}"
+      - action: broadlink_plug_timer.set_deadman
+        data:
+          entity_id: "{{ plug }}"
+          minutes: "{{ minutes }}"
+        response_variable: first
+        continue_on_error: true    # a failed action leaves `first` undefined
+      - if:
+          - condition: template
+            value_template: "{{ first is defined }}"
+        then:
+          - event: circulation_pump_deadman_result
+            event_data:
+              ok: true
+              off: "{{ first.off_local }}"
+              minutes: "{{ minutes }}"
+          - stop: Dead-man set
+      - delay:
+          seconds: "{{ retry_after_s | int(20) }}"
+      - action: broadlink_plug_timer.set_deadman
+        data:
+          entity_id: "{{ plug }}"
+          minutes: "{{ minutes }}"
+        response_variable: second
+        continue_on_error: true
+      - if:
+          - condition: template
+            value_template: "{{ second is defined }}"
+        then:
+          - event: circulation_pump_deadman_result
+            event_data:
+              ok: true
+              off: "{{ second.off_local }}"
+              minutes: "{{ minutes }}"
+          - stop: Dead-man set on the second attempt
+      - event: circulation_pump_deadman_result
+        event_data:
+          ok: false
+          minutes: "{{ minutes }}"
+      - action: logbook.log
+        data:
+          name: Circulation pump dead-man
+          message: "Dead-man NOT written into the plug (2 attempts, see the Home Assistant log)"
+          entity_id: "{{ plug }}"
+      - if:
+          - condition: template
+            value_template: "{{ is_state(plug, 'on') }}"
+        then:
+          - action: persistent_notification.create
+            data:
+              notification_id: circulation_pump_deadman
+              title: "Circulation pump without dead-man"
+              message: "The plug did not take the dead-man switch-off. Home Assistant switches the pump off as usual; only the safety net is missing for this run."
+
+  # Example run: dead-man first (not waiting), then on, wait, off.
+  circulation_pump_run:
+    alias: "Circulation pump: run"
+    mode: single
+    fields:
+      duration_s:
+        name: Duration
+        required: true
+        default: 120
+        selector:
+          number:
+            min: 10
+            max: 3600
+            unit_of_measurement: s
+    sequence:
+      - action: script.turn_on
+        target:
+          entity_id: script.circulation_pump_deadman
+        data:
+          variables:
+            run_s: "{{ duration_s }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.circulation_pump
+      - delay:
+          seconds: "{{ duration_s | int }}"
+      - action: switch.turn_off
+        target:
+          entity_id: switch.circulation_pump
+
+# When the plug switches the pump off at the latest (last dead-man). No value = last attempt failed.
+template:
+  - triggers:
+      - trigger: event
+        event_type: circulation_pump_deadman_result
+    sensor:
+      - name: "Circulation pump dead-man"
+        unique_id: circulation_pump_deadman
+        icon: mdi:timer-cog-outline
+        device_class: timestamp
+        state: "{{ trigger.event.data.off if trigger.event.data.ok else none }}"
+        attributes:
+          status: "{{ 'armed' if trigger.event.data.ok else 'error' }}"
+          minutes: "{{ trigger.event.data.minutes }}"
+
+automation:
+  # Daily sync of the weekly table. The plug clock is fixed to UTC+8, so local times move by one hour
+  # at every daylight saving change; this writes only when the plug differs (after such a change or
+  # after an edit in the Broadlink app). The list replaces the whole weekly table of the plug.
+  - id: circulation_pump_weekly_sync
+    alias: "Circulation pump: sync weekly timers of the plug"
+    mode: single
+    triggers:
+      - trigger: time
+        at: "04:05:00"
+    variables:
+      entries:
+        - days: mon-fri
+          on_time: "06:30"
+          off_time: "06:35"
+        - days: [sat, sun]
+          on_time: "08:00"
+          off_time: "08:05"
+    actions:
+      - action: broadlink_plug_timer.write_weekly
+        data:
+          entity_id: switch.circulation_pump
+          entries: "{{ entries }}"
+        response_variable: result
+        continue_on_error: true
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ result is not defined }}"
+            sequence:
+              - action: logbook.log
+                data:
+                  name: Circulation pump timers
+                  message: "Sync of the weekly timers failed (see the Home Assistant log)"
+                  entity_id: switch.circulation_pump
+          - conditions:
+              - condition: template
+                value_template: "{{ result.written }}"
+            sequence:
+              - action: logbook.log
+                data:
+                  name: Circulation pump timers
+                  message: "Weekly timers written into the plug (offset {{ result.offset_hours }} h)"
+                  entity_id: switch.circulation_pump
