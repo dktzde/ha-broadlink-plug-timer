@@ -1,0 +1,109 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Broadlink Plug Timer",
+        "description": "Adds actions that write timers directly into Broadlink SP3S plugs (dead-man switch, one-time and weekly switching). Set up the plugs in the Broadlink integration first; the actions use their switch entities."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Broadlink Plug Timer is already set up. One entry serves all plugs."
+    }
+  },
+  "services": {
+    "read": {
+      "name": "Read timers",
+      "description": "Reads state, clock and all timers of a Broadlink SP3S plug, in plug time and in local time.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        }
+      }
+    },
+    "set_deadman": {
+      "name": "Set dead-man switch-off",
+      "description": "Writes a one-time switch-off into the plug, the given minutes after the plug clock. Replaces the previous dead-man entry. Call it right before switching on: if Home Assistant does not switch off in time, the plug does it by itself.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Planned run time plus a reserve, 1 to 1440 minutes."
+        }
+      }
+    },
+    "clear_deadman": {
+      "name": "Clear dead-man switch-off",
+      "description": "Removes the dead-man entry and expired one-time entries from the plug.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        }
+      }
+    },
+    "set_once": {
+      "name": "Set one-time switching",
+      "description": "Adds a one-time switch-on and switch-off in local time. The plug runs it by itself, without Home Assistant. Saves a backup of the plug memory first.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        },
+        "on_time": {
+          "name": "Switch on",
+          "description": "Local date and time to switch on."
+        },
+        "off_time": {
+          "name": "Switch off",
+          "description": "Local date and time to switch off (after switch on)."
+        }
+      }
+    },
+    "write_weekly": {
+      "name": "Write weekly schedule",
+      "description": "Replaces the whole weekly table of the plug (like the Broadlink app) with the given entries in local time. Writes only if the plug differs; saves a backup first. Call it daily, because the plug clock does not follow daylight saving time.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        },
+        "entries": {
+          "name": "Entries",
+          "description": "List of entries: days (\"mon-fri\", \"sat,sun\" or a list), on_time and off_time (\"HH:MM\"), enabled (default true). Every on_time needs an off_time. At most 16 entries in plug time."
+        },
+        "dry_run": {
+          "name": "Dry run",
+          "description": "Only return what would be written."
+        }
+      }
+    },
+    "backup": {
+      "name": "Back up plug memory",
+      "description": "Saves the raw timer memory of the plug into the folder broadlink_plug_timer in the configuration folder.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        }
+      }
+    },
+    "restore": {
+      "name": "Restore plug timers",
+      "description": "Writes the weekly and one-time tables of a backup back into the plug. Name and other settings of the plug stay.",
+      "fields": {
+        "entity_id": {
+          "name": "Plug",
+          "description": "Switch entity of the plug (Broadlink integration)."
+        },
+        "file": {
+          "name": "Backup file",
+          "description": "File name in the folder broadlink_plug_timer, as returned by the backup action."
+        }
+      }
+    }
+  }
+}
