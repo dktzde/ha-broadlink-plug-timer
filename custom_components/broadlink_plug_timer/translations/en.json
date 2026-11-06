@@ -73,7 +73,7 @@
         },
         "entries": {
           "name": "Entries",
-          "description": "List of entries: days (\"mon-fri\", \"sat,sun\" or a list), on_time and off_time (\"HH:MM\"), enabled (default true). Every on_time needs an off_time. At most 16 entries in plug time."
+          "description": "List of entries: days (\"mon-fri\", \"sat,sun\" or a list), on_time and off_time (\"HH:MM\"), enabled (default true). Every on_time needs an off_time; an off_time earlier than the on_time means the next day. At most 16 entries in plug time."
         },
         "dry_run": {
           "name": "Dry run",

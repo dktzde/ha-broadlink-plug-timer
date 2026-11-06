@@ -110,7 +110,7 @@ data:
 ```
 
 - The list **replaces the plug's whole weekly table**. To keep entries made in the app, include them; `read` shows them in local time.
-- **Every `on_time` needs an `off_time`.** The plug has no run-time limit of its own.
+- **Every `on_time` needs an `off_time`.** The plug has no run-time limit of its own. An `off_time` earlier than the `on_time` belongs to the next day (`23:00`–`00:05` on `mon` switches off on Tuesday at 00:05).
 - The plug has 16 slots. An entry whose "on" and "off" fall on different plug days takes 2 slots (see below).
 - **Daylight saving time:** the plug clock runs on UTC+8 and never changes. A weekly time written in winter is one hour off in summer. Call `write_weekly` every day with the same entries, for example at 04:05. It writes only when something changed, so only after a daylight saving change or after an edit in the app.
 
@@ -141,7 +141,7 @@ Details, the way the layout was found, and the test log are in [docs/protocol.md
 - **Timers in the plug bypass Home Assistant.** A weekly or one-time "on" switches the load even if Home Assistant is down. That is the point, but nothing in Home Assistant watches those runs.
 - There is no dead-man for switching outside Home Assistant (app, button on the plug). It only covers runs that call `set_deadman` first.
 - Every `set_deadman` is one write to the plug's flash, so 10–20 a day for a circulation pump. How many writes the flash can take is unknown.
-- If the plug clock is not set (year before 2020, for example after a power cut without internet), the dead-man is refused with an error. The plug sets its clock from the Broadlink cloud.
+- If the plug clock is not set (year before 2020, for example after a power cut without internet), the dead-man is refused with an error. The plug sets its clock from the Broadlink cloud. If the clock is more than 2 minutes off, `write_weekly` and `set_once` are refused, because local times would be wrong; the dead-man still works, as it is relative to the plug clock.
 - If you save timers in the Broadlink app, the app writes the whole table. The next `set_deadman` brings the dead-man back; the daily `write_weekly` resets the weekly table.
 - Home Assistant polls the plug about once a minute, so it sees switching done by the plug itself late, or not at all if it was very short.
 

@@ -90,6 +90,8 @@ DAYS_FROM_MONDAY = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ALL_DAYS = 0x7F
 
 MAX_DEADMAN_MINUTES = 24 * 60
+#: Weekly and one-time times are refused if the plug clock is further off than this (it syncs from the cloud).
+MAX_CLOCK_DEVIATION_S = 120
 
 
 class PlugError(Exception):
@@ -494,6 +496,16 @@ def utc_offset(memory: bytes, now: datetime) -> timedelta:
     return _round_quarter((clock - now.astimezone(UTC).replace(tzinfo=None)).total_seconds())
 
 
+def _check_clock(memory: bytes, now: datetime) -> None:
+    """Refuse to convert local times if the plug clock deviates (the rounded offset would hide it)."""
+    _offset, deviation = local_offset(memory, now)
+    if abs(deviation) > MAX_CLOCK_DEVIATION_S:
+        raise PlugError(
+            f"The plug clock is {deviation:+.0f} s off (more than {MAX_CLOCK_DEVIATION_S} s), so local times would be "
+            "wrong. The plug sets its clock from the Broadlink cloud; check its internet access."
+        )
+
+
 def _plug_to_local(moment: datetime, offset_utc: timedelta, zone: tzinfo | None) -> datetime:
     return (moment - offset_utc).replace(tzinfo=UTC).astimezone(zone)
 
@@ -521,6 +533,7 @@ def weekly_to_plug(entries: Iterable[dict[str, Any]], offset: timedelta) -> list
     Entry: {"enabled": bool (default True), "days": "mon-fri" or ["mon", ...] (default every day),
             "on_time": "HH:MM[:SS]" or None, "off_time": "HH:MM[:SS]" or None}.
     The weekdays are local weekdays; they are shifted when the plug time is on another day.
+    An off_time earlier than the on_time means the next day (overnight, e.g. 23:00-00:05).
     If "on" and "off" end up on different plug days, the entry is split into two.
     """
     encoded: list[bytes] = []
@@ -537,6 +550,13 @@ def weekly_to_plug(entries: Iterable[dict[str, Any]], offset: timedelta) -> list
             )
         on = _time_to_plug(on_text, offset) if on_text else None
         off = _time_to_plug(off_text, offset) if off_text else None
+        if on and off:
+            on_local, off_local = parse_time(on_text), parse_time(off_text)
+            if off_local == on_local:
+                raise PlugInputError(f"Weekly entry {number}: on_time and off_time are the same")
+            if off_local < on_local:
+                # Overnight (e.g. 23:00-00:05): the switch-off belongs to the next day
+                off = off[0], off[1] + 1
         if on and off and on[1] != off[1]:
             encoded.append(encode_weekly(enabled, rotate_mask(mask, on[1]), on[0], None))
             encoded.append(encode_weekly(enabled, rotate_mask(mask, off[1]), None, off[0]))
@@ -605,6 +625,7 @@ def with_once(memory: bytes, on: datetime, off: datetime, now: datetime) -> tupl
     if on.tzinfo is None or off.tzinfo is None:
         raise PlugInputError("Times must be timezone aware")
     clock = _valid_clock(memory)
+    _check_clock(memory, now)
     offset = utc_offset(memory, now)
     on_plug = _local_to_plug(on, offset)
     off_plug = _local_to_plug(off, offset)
@@ -632,6 +653,7 @@ def with_weekly(memory: bytes, entries: Iterable[dict[str, Any]], now: datetime)
     the local times move by one hour at every daylight saving change: write the table again
     every day (only a changed table is written).
     """
+    _check_clock(memory, now)
     offset, _deviation = local_offset(memory, now)
     new = bytearray(memory)
     set_weekly_table(new, weekly_to_plug(entries, offset))

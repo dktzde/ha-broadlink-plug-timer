@@ -161,6 +161,33 @@ def test_weekly_to_plug_split_across_plug_midnight() -> None:
     ]
 
 
+def test_weekly_overnight_entry() -> None:
+    # Monday 23:00 on, 00:05 off = Tuesday morning; CET: plug Tuesday 06:00-07:05
+    [raw] = plug.weekly_to_plug([{"days": "mon", "on_time": "23:00", "off_time": "00:05"}], timedelta(hours=7))
+    assert raw == plug.encode_weekly(True, 0x04, (6, 0, 0), (7, 5, 0))
+    # Without offset the off moves to the next plug day: split into two entries
+    raws = plug.weekly_to_plug([{"days": "sat", "on_time": "23:00", "off_time": "00:05"}], timedelta(0))
+    assert raws == [
+        plug.encode_weekly(True, 0x40, (23, 0, 0), None),  # Saturday 23:00
+        plug.encode_weekly(True, 0x01, None, (0, 5, 0)),  # Sunday 00:05
+    ]
+
+
+def test_weekly_on_equals_off() -> None:
+    with pytest.raises(plug.PlugInputError, match="same"):
+        plug.weekly_to_plug([{"on_time": "06:30", "off_time": "06:30"}], timedelta(hours=7))
+
+
+def test_weekly_and_once_refused_with_clock_drift() -> None:
+    memory = make_memory(WINTER_CLOCK + timedelta(seconds=200))
+    with pytest.raises(plug.PlugError, match="clock"):
+        plug.with_weekly(memory, [{"on_time": "06:30", "off_time": "06:35"}], WINTER_NOW)
+    on = datetime(2026, 11, 7, 10, 0, tzinfo=BERLIN)
+    with pytest.raises(plug.PlugError, match="clock"):
+        plug.with_once(memory, on, on + timedelta(minutes=5), WINTER_NOW)
+    plug.with_deadman(memory, 8, WINTER_NOW)  # relative to the plug clock: drift does not matter
+
+
 def test_weekly_needs_off_for_every_on() -> None:
     with pytest.raises(plug.PlugInputError, match="off_time"):
         plug.weekly_to_plug([{"on_time": "06:30"}], timedelta(hours=7))
