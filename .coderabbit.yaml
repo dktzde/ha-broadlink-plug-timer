@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit settings: reviews only the code, with few and relevant comments.
+# Free for public repositories. Docs: https://docs.coderabbit.ai/reference/configuration
+language: en-US
+
+reviews:
+  # quiet = only important findings, chill = balanced, assertive = many (nitpicky)
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  poem: false
+  in_progress_fortune: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    # documentation-only PRs need no automatic review
+    ignore_title_keywords:
+      - "docs:"
+      - "docs("
+
+  # Only the code: no Markdown or images
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.png"
+
+  path_instructions:
+    - path: "custom_components/broadlink_plug_timer/plug.py"
+      instructions: >-
+        Protocol and memory layout of Broadlink SP3S plugs (see docs/protocol.md); no Home Assistant imports allowed,
+        it must stay usable as a command line tool. Check byte offsets and sizes against the layout table, that every
+        write keeps the reserved bytes 0x1D0-0x1EF and the name unchanged, time zone handling (plug clock is UTC+8,
+        local times must be timezone aware, daylight saving changes), and that invalid input raises PlugInputError.
+    - path: "custom_components/broadlink_plug_timer/*.py"
+      instructions: >-
+        Home Assistant custom integration (domain broadlink_plug_timer) that only adds actions. Check for blocking I/O
+        in the event loop, unhandled network errors, actions registered in async_setup, ServiceValidationError for bad
+        input and HomeAssistantError for device errors, and no IP or MAC addresses in log messages above debug level.
+    - path: "custom_components/broadlink_plug_timer/translations/*.json"
+      instructions: "Every action and field in services.yaml needs a name and description here."
+    - path: "tests/**"
+      instructions: "Tests must never open network sockets or talk to a real plug; use the fake plug in tests/common.py."
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+
+chat:
+  auto_reply: true
