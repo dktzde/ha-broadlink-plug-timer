@@ -82,7 +82,9 @@ async def test_read(hass: HomeAssistant, device: FakeDevice) -> None:
     response = await call(hass, "read", entity_id=entity_id)
     assert response["entity_id"] == entity_id
     assert response["name"] == "Test plug"
-    assert response["weekly_local_time"][0]["on_time"] in ("03:14:59", "04:14:59")  # CET or CEST
+    # plug UTC+8: 10:14:59 plug time = 03:14:59 CET (winter) or 04:14:59 CEST (summer)
+    expected = "03:14:59" if dt_util.now().utcoffset() == timedelta(hours=1) else "04:14:59"
+    assert response["weekly_local_time"][0]["on_time"] == expected
     assert device.connections == [(HOST, MAC, 0x947A)]
     assert device.writes == 0
 

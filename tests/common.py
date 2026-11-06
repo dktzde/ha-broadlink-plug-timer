@@ -25,7 +25,8 @@ def make_memory(
     memory[0] = plug.CMD_READ
     memory[plug.OFS_STATE] = 1 if is_on else 0
     plug.set_weekly_table(memory, weekly or [])
-    memory[plug.OFS_NAME : plug.OFS_NAME + len(name)] = name.encode()
+    encoded = name.encode()[: plug.NAME_LENGTH]  # UTF-8 bytes, cut to the 63-byte field
+    memory[plug.OFS_NAME : plug.OFS_NAME + len(encoded)] = encoded
     plug.set_once_table(memory, once or [])
     memory[plug.OFS_RESERVED : plug.OFS_CLOCK] = bytes(range(32))  # recognisable, must never change
     memory[plug.OFS_CLOCK : plug.OFS_CLOCK + 8] = plug.encode_timestamp(clock)

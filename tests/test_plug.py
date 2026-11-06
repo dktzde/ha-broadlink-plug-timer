@@ -488,6 +488,10 @@ def test_backup_names_are_unique(tmp_path) -> None:
     assert len(list(tmp_path.iterdir())) == 2
 
 
+def test_make_memory_with_non_ascii_name() -> None:
+    assert len(make_memory(WINTER_CLOCK, name="Lüfter " * 20)) == plug.MEMORY_SIZE
+
+
 def test_invalid_mac() -> None:
     with pytest.raises(plug.PlugInputError):
         plug.Plug(HOST, "a1b2c3", 0x947A)
